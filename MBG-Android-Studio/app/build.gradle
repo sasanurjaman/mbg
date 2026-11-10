@@ -14,4 +14,15 @@ android {
         versionCode 1
         versionName '1.0.0'
     }
+
+    // Samakan target JVM Java & Kotlin ke 17. Tanpa ini build gagal:
+    // javac default AGP = 1.8, Kotlin mengikuti JDK runner = 17,
+    // dan Gradle menolak campuran itu di :app:compileDebugKotlin.
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
 }
