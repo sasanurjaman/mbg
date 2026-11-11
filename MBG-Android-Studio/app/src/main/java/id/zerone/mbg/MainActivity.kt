@@ -217,7 +217,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     pdfView.webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             view ?: return
-                            view.postDelayed({
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                                 try {
                                     val w = 800
                                     view.measure(
@@ -225,6 +225,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                                     )
                                     view.layout(0, 0, w, view.measuredHeight)
+                                    if (view.measuredHeight <= 0) throw IllegalStateException("tinggi-0")
                                     val h = view.measuredHeight.coerceAtLeast(200)
                                     val doc = android.graphics.pdf.PdfDocument()
                                     val scale = 595f / w
@@ -246,7 +247,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     startActivity(Intent.createChooser(intent, "Kirim nota PDF"))
                                     webView.evaluateJavascript("window.__pdfShareOk&&window.__pdfShareOk()", null)
                                 } catch (e: Exception) {
-                                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('render')", null)
+                                    val em = (e.message ?: "render").replace(Regex("[^A-Za-z0-9 _-]"), "").take(40)
+                                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('render: " + em + "')", null)
                                 }
                             }, 500)
                         }
