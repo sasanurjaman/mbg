@@ -382,6 +382,80 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 }
             }
         }
+        @JavascriptInterface
+        fun downloadUpdate() {
+            if (!packageManager.canRequestPackageInstalls()) {
+                runOnUiThread {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) {}
+                    webView.evaluateJavascript("window.__updateFailed&&window.__updateFailed('izin-instal: aktifkan izin pasang untuk MBG, lalu coba lagi')", null)
+                }
+                return
+            }
+            Thread {
+                try {
+                    val dir = File(cacheDir, "updates").apply { mkdirs() }
+                    val out = File(dir, "MBG-update.apk")
+                    val conn = (java.net.URL("https://github.com/sasanurjaman/mbg/releases/latest/download/MBG.apk").openConnection() as java.net.HttpURLConnection).apply {
+                        instanceFollowRedirects = true
+                        connectTimeout = 20000
+                        readTimeout = 30000
+                        setRequestProperty("User-Agent", "MBG-Android")
+                    }
+                    conn.connect()
+                    if (conn.responseCode !in 200..299) throw IllegalStateException("http-" + conn.responseCode)
+                    val total = conn.contentLengthLong
+                    var done = 0L
+                    var lastPct = -1
+                    conn.inputStream.use { ins ->
+                        java.io.FileOutputStream(out).use { fos ->
+                            val buf = ByteArray(65536)
+                            while (true) {
+                                val n = ins.read(buf)
+                                if (n < 0) break
+                                fos.write(buf, 0, n)
+                                done += n
+                                if (total > 0) {
+                                    val pct = (done * 100 / total).toInt()
+                                    if (pct != lastPct) {
+                                        lastPct = pct
+                                        webView.post { webView.evaluateJavascript("window.__updateProgress&&window.__updateProgress(" + pct + ")", null) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    runOnUiThread {
+                        try {
+                            val uri = FileProvider.getUriForFile(this@MainActivity, "id.zerone.mbg.fileprovider", out)
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                            webView.evaluateJavascript("window.__updateInstalling&&window.__updateInstalling()", null)
+                        } catch (e: Exception) {
+                            webView.evaluateJavascript("window.__updateFailed&&window.__updateFailed('pasang')", null)
+                        }
+                    }
+                } catch (e: Exception) {
+                    val em = (e.message ?: "unduh").replace(Regex("[^A-Za-z0-9 _-]"), "").take(40)
+                    webView.post { webView.evaluateJavascript("window.__updateFailed&&window.__updateFailed('unduh: " + em + "')", null) }
+                }
+            }.start()
+        }
+
+        @JavascriptInterface
+        fun uninstallApp() {
+            runOnUiThread {
+                try {
+                    startActivity(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (e: Exception) {}
+            }
+        }
+
     }
 
     @Deprecated("Deprecated in Android API")
