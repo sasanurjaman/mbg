@@ -51,7 +51,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build APK debug
+      - name: Build APK
         run: gradle --no-daemon assembleDebug
 
       # Path artifact dihitung dari root workspace, BUKAN dari
@@ -59,7 +59,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MBG-debug-APK
+          name: MBG-APK
           path: MBG-Android-Studio/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -74,4 +74,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk MBG.apk
-          gh release create "${{ github.ref_name }}" MBG.apk --title "MBG ${{ github.ref_name }}" --notes "APK debug MBG ${{ github.ref_name }}. Instal pertama: unduh MBG.apk dari halaman rilis ini, lalu pasang manual. Update berikutnya dapat dilakukan dari dalam aplikasi (Pengaturan, bagian Versi & Update)." || gh release upload "${{ github.ref_name }}" MBG.apk --clobber
+          gh release create "${{ github.ref_name }}" MBG.apk --title "MBG ${{ github.ref_name }}" --notes "Aplikasi penjualan & tagihan MBG ${{ github.ref_name }} (PD. LS Putra). Instal pertama: unduh MBG.apk dari halaman rilis ini, lalu pasang manual. Update berikutnya dapat dilakukan dari dalam aplikasi (Pengaturan, bagian Versi & Update)." || gh release upload "${{ github.ref_name }}" MBG.apk --clobber

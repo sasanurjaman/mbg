@@ -412,7 +412,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     try {
                         startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     } catch (e: Exception) {}
-                    webView.evaluateJavascript("window.__updateFailed&&window.__updateFailed('izin-instal: aktifkan izin pasang untuk MBG, lalu coba lagi')", null)
+                    webView.evaluateJavascript("window.__updateNeedPermission&&window.__updateNeedPermission()", null)
                 }
                 return
             }
@@ -474,12 +474,47 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         fun uninstallApp() {
             runOnUiThread {
                 try {
-                    startActivity(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    // Jalur resmi PackageInstaller: ACTION_DELETE terbukti
+                    // senyap ditelan sebagian ROM setelah dialog confirm JS.
+                    // Sistem membalas status lewat broadcast PendingIntent ini.
+                    val receiver = object : android.content.BroadcastReceiver() {
+                        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+                            try { unregisterReceiver(this) } catch (e: Exception) {}
+                            val status = intent?.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999) ?: -999
+                            if (status == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                                @Suppress("DEPRECATION")
+                                val confirmIntent = intent?.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                                if (confirmIntent != null) {
+                                    try { startActivity(confirmIntent) } catch (e: Exception) {}
+                                }
+                            } else if (status != android.content.pm.PackageInstaller.STATUS_SUCCESS && status != -999) {
+                                val msg = (intent?.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "").replace(Regex("[^A-Za-z0-9 _.,-]"), "").take(60)
+                                webView.evaluateJavascript("window.__uninstallFailed&&window.__uninstallFailed('" + msg + "')", null)
+                            }
+                        }
+                    }
+                    val filter = android.content.IntentFilter("id.zerone.mbg.UNINSTALL_RESULT")
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        registerReceiver(receiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+                    } else {
+                        registerReceiver(receiver, filter)
+                    }
+                    val cbIntent = Intent("id.zerone.mbg.UNINSTALL_RESULT").setPackage(packageName)
+                    val pi = android.app.PendingIntent.getBroadcast(
+                        this@MainActivity, 4401, cbIntent,
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
+                    )
+                    packageManager.packageInstaller.uninstall(packageName, pi.intentSender)
+                    webView.evaluateJavascript("window.__uninstallRequested&&window.__uninstallRequested()", null)
                 } catch (e: Exception) {
                     try {
-                        startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    } catch (e2: Exception) {}
-                    webView.evaluateJavascript("window.__uninstallFallback&&window.__uninstallFallback()", null)
+                        startActivity(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e2: Exception) {
+                        try {
+                            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (e3: Exception) {}
+                        webView.evaluateJavascript("window.__uninstallFallback&&window.__uninstallFallback()", null)
+                    }
                 }
             }
         }
