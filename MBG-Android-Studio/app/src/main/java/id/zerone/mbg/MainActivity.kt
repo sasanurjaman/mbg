@@ -268,7 +268,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     }
                     val notes = root.optString("notes")
                     val notesLines = if (notes.isNotEmpty()) wrap(notes, tp(9f, false, dark, android.graphics.Paint.Align.LEFT), 262f, 5) else emptyList()
-                    val tableTop = 156f
+                    val tableTop = 178f
                     var rowsH = 0f
                     for (r in rows) rowsH += r.h
                     val totalsTop = tableTop + 24f + rowsH + 12f
@@ -354,13 +354,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val fc = R - 95f
                     txt("Hormat kami", fc, footTop, tp(9.5f, false, dark, android.graphics.Paint.Align.CENTER))
                     val ttd = bmp("ttd.png", 44f)
-                    val stempel = bmp("logo-stempel.png", 50f)
+                    val stempel = bmp("logo-stempel.png", 42f)
                     if (ttd != null) c.drawBitmap(ttd, fc - ttd.width / 2f, footTop + 8f, null)
                     if (stempel != null) {
-                        val sx = fc + (if (ttd != null) ttd.width / 2f else 20f) - 14f
+                        val sx = fc + (if (ttd != null) ttd.width / 2f else 20f) - 8f
                         val scx = sx + stempel.width / 2f
-                        val scy = footTop + 14f + stempel.height / 2f
-                        c.save(); c.rotate(-8f, scx, scy); c.drawBitmap(stempel, sx, footTop + 14f, null); c.restore()
+                        val scy = footTop + 18f + stempel.height / 2f
+                        c.save(); c.rotate(-8f, scx, scy); c.drawBitmap(stempel, sx, footTop + 18f, null); c.restore()
                     }
                     txt(biz.optString("name"), fc, footTop + 78f, tp(10f, true, dark, android.graphics.Paint.Align.CENTER))
                     doc.finishPage(page)
