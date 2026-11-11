@@ -92,6 +92,29 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     false
                 }
             }
+
+            override fun onJsAlert(view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                return try {
+                    android.app.AlertDialog.Builder(this@MainActivity)
+                        .setMessage(message ?: "")
+                        .setPositiveButton("OK") { _, _ -> result?.confirm() }
+                        .setOnCancelListener { result?.cancel() }
+                        .show()
+                    true
+                } catch (e: Exception) { false }
+            }
+
+            override fun onJsConfirm(view: WebView?, url: String?, message: String?, result: android.webkit.JsResult?): Boolean {
+                return try {
+                    android.app.AlertDialog.Builder(this@MainActivity)
+                        .setMessage(message ?: "")
+                        .setPositiveButton("Ya") { _, _ -> result?.confirm() }
+                        .setNegativeButton("Batal") { _, _ -> result?.cancel() }
+                        .setOnCancelListener { result?.cancel() }
+                        .show()
+                    true
+                } catch (e: Exception) { false }
+            }
         }
 
         webView.loadUrl("file:///android_asset/index.html")
@@ -452,7 +475,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             runOnUiThread {
                 try {
                     startActivity(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } catch (e: Exception) {}
+                } catch (e: Exception) {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e2: Exception) {}
+                    webView.evaluateJavascript("window.__uninstallFallback&&window.__uninstallFallback()", null)
+                }
             }
         }
 
