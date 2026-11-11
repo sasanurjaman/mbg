@@ -171,6 +171,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         fun biometricAvailable(): Boolean = canBiometric()
 
         @JavascriptInterface
+        @JavascriptInterface
+        fun appVersion(): String {
+            return try {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+            } catch (e: Exception) { "" }
+        }
+
         fun shareImage(base64: String, fileName: String) {
             runOnUiThread {
                 try {
