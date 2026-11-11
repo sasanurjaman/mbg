@@ -209,74 +209,176 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
 
         @JavascriptInterface
-        fun sharePdf(html: String, fileName: String) {
+        fun sharePdfData(json: String, fileName: String) {
             runOnUiThread {
-                var pdfView: WebView? = null
-                fun cleanup() {
-                    pdfView?.let { v ->
-                        try { (v.parent as? android.view.ViewGroup)?.removeView(v) } catch (e: Exception) {}
-                        try { v.destroy() } catch (e: Exception) {}
-                    }
-                    pdfView = null
-                }
                 try {
-                    val view2 = WebView(this@MainActivity)
-                    pdfView = view2
-                    view2.settings.javaScriptEnabled = false
-                    // WebView render harus MENEMPEL di jendela (di luar layar) +
-                    // layer software agar draw() ke PdfDocument berisi; WebView
-                    // lepas-layar menggambar halaman kosong, dan callback adaptor
-                    // cetak tidak bisa dibuat dari kode aplikasi (konstruktornya
-                    // package-private).
-                    view2.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-                    findViewById<android.view.ViewGroup>(android.R.id.content)
-                        .addView(view2, android.view.ViewGroup.LayoutParams(800, 1))
-                    view2.translationX = -2000f
-                    view2.webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            view ?: return
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                try {
-                                    val w = 800
-                                    view.measure(
-                                        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
-                                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-                                    )
-                                    view.layout(0, 0, w, view.measuredHeight)
-                                    if (view.measuredHeight <= 0) throw IllegalStateException("tinggi-0")
-                                    val h = view.measuredHeight
-                                    val doc = android.graphics.pdf.PdfDocument()
-                                    val scale = 595f / w
-                                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(595, (h * scale).toInt().coerceAtLeast(200), 1).create()
-                                    val page = doc.startPage(pageInfo)
-                                    page.canvas.scale(scale, scale)
-                                    view.draw(page.canvas)
-                                    doc.finishPage(page)
-                                    val dir = File(cacheDir, "shared").apply { mkdirs() }
-                                    val out = File(dir, fileName)
-                                    java.io.FileOutputStream(out).use { doc.writeTo(it) }
-                                    doc.close()
-                                    val uri = FileProvider.getUriForFile(this@MainActivity, "id.zerone.mbg.fileprovider", out)
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/pdf"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    startActivity(Intent.createChooser(intent, "Kirim nota PDF"))
-                                    cleanup()
-                                    webView.evaluateJavascript("window.__pdfShareOk&&window.__pdfShareOk()", null)
-                                } catch (e: Exception) {
-                                    val em = (e.message ?: "render").replace(Regex("[^A-Za-z0-9 _-]"), "").take(40)
-                                    cleanup()
-                                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('render: " + em + "')", null)
-                                }
-                            }, 500)
+                    val root = org.json.JSONObject(json)
+                    val biz = root.optJSONObject("biz") ?: org.json.JSONObject()
+                    val arr = root.optJSONArray("lines")
+                    val dark = android.graphics.Color.rgb(17, 24, 39)
+                    val gray = android.graphics.Color.rgb(107, 114, 128)
+                    val lineGray = android.graphics.Color.rgb(229, 231, 235)
+                    val lightTxt = android.graphics.Color.rgb(229, 231, 235)
+                    fun tp(size: Float, bold: Boolean, color: Int, align: android.graphics.Paint.Align): android.graphics.Paint {
+                        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                        p.textSize = size
+                        p.color = color
+                        p.textAlign = align
+                        p.typeface = if (bold) android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD) else android.graphics.Typeface.DEFAULT
+                        return p
+                    }
+                    fun wrap(text: String, p: android.graphics.Paint, maxW: Float, maxLines: Int): List<String> {
+                        val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                        if (words.isEmpty()) return listOf("")
+                        val out = mutableListOf<String>()
+                        var cur = ""
+                        var cut = false
+                        for (w in words) {
+                            val t = if (cur.isEmpty()) w else cur + " " + w
+                            if (p.measureText(t) <= maxW) { cur = t } else {
+                                if (cur.isNotEmpty()) out.add(cur)
+                                if (out.size >= maxLines) { cut = true; break }
+                                cur = w
+                            }
+                        }
+                        if (!cut && cur.isNotEmpty()) out.add(cur)
+                        if (cut && out.isNotEmpty()) {
+                            var last = out[out.size - 1]
+                            while (last.isNotEmpty() && p.measureText(last + "...") > maxW) last = last.dropLast(1)
+                            out[out.size - 1] = last.trimEnd() + "..."
+                        }
+                        return if (out.isEmpty()) listOf("") else out
+                    }
+                    fun bmp(name: String, targetH: Float): android.graphics.Bitmap? {
+                        return try {
+                            val raw = assets.open(name).use { android.graphics.BitmapFactory.decodeStream(it) } ?: return null
+                            val w = (targetH * raw.width / raw.height).toInt().coerceAtLeast(1)
+                            android.graphics.Bitmap.createScaledBitmap(raw, w, targetH.toInt(), true)
+                        } catch (e: Exception) { null }
+                    }
+                    data class Row(val nameLines: List<String>, val qty: String, val price: String, val amount: String, val h: Float)
+                    val pName = tp(9.5f, false, dark, android.graphics.Paint.Align.LEFT)
+                    val rows = mutableListOf<Row>()
+                    if (arr != null) {
+                        for (idx in 0 until arr.length()) {
+                            val o = arr.optJSONObject(idx) ?: continue
+                            val nl = wrap(o.optString("name"), pName, 300f, 2)
+                            rows.add(Row(nl, o.optString("qty"), o.optString("price"), o.optString("amount"), maxOf(26f, 12f + nl.size * 12f)))
                         }
                     }
-                    view2.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
+                    val notes = root.optString("notes")
+                    val notesLines = if (notes.isNotEmpty()) wrap(notes, tp(9f, false, dark, android.graphics.Paint.Align.LEFT), 262f, 5) else emptyList()
+                    val tableTop = 156f
+                    var rowsH = 0f
+                    for (r in rows) rowsH += r.h
+                    val totalsTop = tableTop + 24f + rowsH + 12f
+                    val totalsH = 4 * 16f + 24f
+                    val footTop = totalsTop + maxOf(totalsH, 12f + notesLines.size * 12f) + 34f
+                    val pageH = (footTop + 78f + 36f).toInt().coerceIn(420, 2400)
+                    val doc = android.graphics.pdf.PdfDocument()
+                    val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, pageH, 1).create())
+                    val c = page.canvas
+                    val M = 36f
+                    val R = 559f
+                    fun fill(color: Int, l: Float, t: Float, r: Float, b: Float) {
+                        val p = android.graphics.Paint()
+                        p.color = color
+                        c.drawRect(l, t, r, b, p)
+                    }
+                    fun txt(s2: String, x: Float, y: Float, p: android.graphics.Paint) { c.drawText(s2, x, y, p) }
+                    fill(android.graphics.Color.rgb(55, 65, 81), 0f, 0f, 595f, 88f)
+                    val logo = bmp("logo-warna.png", 52f)
+                    var nameX = M
+                    if (logo != null) { c.drawBitmap(logo, M, 18f, null); nameX = M + logo.width + 10f }
+                    txt(biz.optString("name").uppercase(), nameX, 40f, tp(15f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.LEFT))
+                    txt(biz.optString("address"), nameX, 57f, tp(9f, false, lightTxt, android.graphics.Paint.Align.LEFT))
+                    val contact = biz.optString("phone") + if (biz.optString("email").isNotEmpty()) "  -  " + biz.optString("email") else ""
+                    txt(contact, nameX, 71f, tp(9f, false, lightTxt, android.graphics.Paint.Align.LEFT))
+                    txt("TAGIHAN", R, 44f, tp(16f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.RIGHT))
+                    txt(root.optString("number"), R, 62f, tp(9.5f, false, lightTxt, android.graphics.Paint.Align.RIGHT))
+                    txt("TAGIHAN KEPADA", M, 114f, tp(8.5f, true, gray, android.graphics.Paint.Align.LEFT))
+                    txt(root.optString("customer"), M, 134f, tp(13f, true, dark, android.graphics.Paint.Align.LEFT))
+                    val meta = listOf(
+                        "TAGIHAN" to root.optString("number"),
+                        "TANGGAL" to root.optString("date"),
+                        "BATAS WAKTU" to root.optString("due"),
+                        "MATA UANG" to "IDR"
+                    )
+                    var my = 114f
+                    for ((k, v) in meta) {
+                        txt(k, 350f, my, tp(8.5f, true, gray, android.graphics.Paint.Align.LEFT))
+                        txt(v, R, my, tp(9.5f, false, dark, android.graphics.Paint.Align.RIGHT))
+                        my += 15f
+                    }
+                    fill(android.graphics.Color.rgb(75, 85, 99), M, tableTop, R, tableTop + 24f)
+                    val hy = tableTop + 16f
+                    val hw = tp(8.5f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.LEFT)
+                    txt("DESKRIPSI", M + 8f, hy, hw)
+                    txt("KUANTITAS", 372f, hy, tp(8.5f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.CENTER))
+                    txt("HARGA JUAL", 478f, hy, tp(8.5f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.RIGHT))
+                    txt("JUMLAH", R - 8f, hy, tp(8.5f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.RIGHT))
+                    var ry = tableTop + 24f
+                    val pQty = tp(9.5f, false, dark, android.graphics.Paint.Align.CENTER)
+                    val pRight = tp(9.5f, false, dark, android.graphics.Paint.Align.RIGHT)
+                    for ((ri, r) in rows.withIndex()) {
+                        if (ri % 2 == 1) fill(android.graphics.Color.rgb(249, 250, 251), M, ry, R, ry + r.h)
+                        var ly = ry + 17f
+                        for (nl in r.nameLines) { txt(nl, M + 8f, ly, pName); ly += 12f }
+                        txt(r.qty, 372f, ry + 17f, pQty)
+                        txt(r.price, 478f, ry + 17f, pRight)
+                        txt(r.amount, R - 8f, ry + 17f, pRight)
+                        fill(lineGray, M, ry + r.h - 0.7f, R, ry + r.h)
+                        ry += r.h
+                    }
+                    if (notesLines.isNotEmpty()) {
+                        txt("Catatan", M, totalsTop + 11f, tp(9f, true, gray, android.graphics.Paint.Align.LEFT))
+                        var ny = totalsTop + 25f
+                        val pNotes = tp(9f, false, dark, android.graphics.Paint.Align.LEFT)
+                        for (nl in notesLines) { txt(nl, M, ny, pNotes); ny += 12f }
+                    }
+                    val totals = listOf(
+                        "Subtotal" to root.optString("subtotal"),
+                        "Diskon" to root.optString("discount"),
+                        "Total Tagihan" to root.optString("total"),
+                        "Sudah Dibayar" to root.optString("paid")
+                    )
+                    var ty = totalsTop + 11f
+                    val pLab = tp(9.5f, false, gray, android.graphics.Paint.Align.LEFT)
+                    val pVal = tp(9.5f, true, dark, android.graphics.Paint.Align.RIGHT)
+                    for ((k, v) in totals) { txt(k, 330f, ty, pLab); txt(v, R, ty, pVal); ty += 16f }
+                    fill(dark, 330f, ty - 11f, R, ty + 13f)
+                    txt("Sisa Tagihan", 338f, ty + 5f, tp(9.5f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.LEFT))
+                    txt(root.optString("remaining"), R - 8f, ty + 5f, tp(9.5f, true, android.graphics.Color.WHITE, android.graphics.Paint.Align.RIGHT))
+                    txt("Tanda terima", M, footTop, tp(9.5f, true, dark, android.graphics.Paint.Align.LEFT))
+                    txt(root.optString("customer"), M, footTop + 78f, tp(10f, true, dark, android.graphics.Paint.Align.LEFT))
+                    val fc = R - 95f
+                    txt("Hormat kami", fc, footTop, tp(9.5f, false, dark, android.graphics.Paint.Align.CENTER))
+                    val ttd = bmp("ttd.png", 44f)
+                    val stempel = bmp("logo-stempel.png", 50f)
+                    if (ttd != null) c.drawBitmap(ttd, fc - ttd.width / 2f, footTop + 8f, null)
+                    if (stempel != null) {
+                        val sx = fc + (if (ttd != null) ttd.width / 2f else 20f) - 14f
+                        val scx = sx + stempel.width / 2f
+                        val scy = footTop + 14f + stempel.height / 2f
+                        c.save(); c.rotate(-8f, scx, scy); c.drawBitmap(stempel, sx, footTop + 14f, null); c.restore()
+                    }
+                    txt(biz.optString("name"), fc, footTop + 78f, tp(10f, true, dark, android.graphics.Paint.Align.CENTER))
+                    doc.finishPage(page)
+                    val dir = File(cacheDir, "shared").apply { mkdirs() }
+                    val out = File(dir, fileName)
+                    java.io.FileOutputStream(out).use { doc.writeTo(it) }
+                    doc.close()
+                    val uri = FileProvider.getUriForFile(this@MainActivity, "id.zerone.mbg.fileprovider", out)
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/pdf"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(Intent.createChooser(intent, "Kirim nota PDF"))
+                    webView.evaluateJavascript("window.__pdfShareOk&&window.__pdfShareOk()", null)
                 } catch (e: Exception) {
-                    cleanup()
-                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('bridge')", null)
+                    val em = (e.message ?: "native").replace(Regex("[^A-Za-z0-9 _-]"), "").take(40)
+                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('native: " + em + "')", null)
                 }
             }
         }
