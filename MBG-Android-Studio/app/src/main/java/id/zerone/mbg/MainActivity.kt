@@ -207,6 +207,56 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 printManager.print("MBG", adapter, null)
             }
         }
+
+        @JavascriptInterface
+        fun sharePdf(html: String, fileName: String) {
+            runOnUiThread {
+                try {
+                    val pdfView = WebView(this@MainActivity)
+                    pdfView.settings.javaScriptEnabled = false
+                    pdfView.webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            view ?: return
+                            view.postDelayed({
+                                try {
+                                    val w = 800
+                                    view.measure(
+                                        View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                                    )
+                                    view.layout(0, 0, w, view.measuredHeight)
+                                    val h = view.measuredHeight.coerceAtLeast(200)
+                                    val doc = android.graphics.pdf.PdfDocument()
+                                    val scale = 595f / w
+                                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(595, (h * scale).toInt().coerceAtLeast(200), 1).create()
+                                    val page = doc.startPage(pageInfo)
+                                    page.canvas.scale(scale, scale)
+                                    view.draw(page.canvas)
+                                    doc.finishPage(page)
+                                    val dir = File(cacheDir, "shared").apply { mkdirs() }
+                                    val out = File(dir, fileName)
+                                    java.io.FileOutputStream(out).use { doc.writeTo(it) }
+                                    doc.close()
+                                    val uri = FileProvider.getUriForFile(this@MainActivity, "id.zerone.mbg.fileprovider", out)
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/pdf"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    startActivity(Intent.createChooser(intent, "Kirim nota PDF"))
+                                    webView.evaluateJavascript("window.__pdfShareOk&&window.__pdfShareOk()", null)
+                                } catch (e: Exception) {
+                                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('render')", null)
+                                }
+                            }, 500)
+                        }
+                    }
+                    pdfView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
+                } catch (e: Exception) {
+                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('bridge')", null)
+                }
+            }
+        }
     }
 
     @Deprecated("Deprecated in Android API")
