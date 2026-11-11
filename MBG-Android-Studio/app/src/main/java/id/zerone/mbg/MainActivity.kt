@@ -224,33 +224,55 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
                                         View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
                                     )
-                                    view.layout(0, 0, w, view.measuredHeight)
                                     if (view.measuredHeight <= 0) throw IllegalStateException("tinggi-0")
-                                    val h = view.measuredHeight.coerceAtLeast(200)
-                                    val doc = android.graphics.pdf.PdfDocument()
-                                    val scale = 595f / w
-                                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(595, (h * scale).toInt().coerceAtLeast(200), 1).create()
-                                    val page = doc.startPage(pageInfo)
-                                    page.canvas.scale(scale, scale)
-                                    view.draw(page.canvas)
-                                    doc.finishPage(page)
+                                    // Render lewat adaptor cetak resmi WebView: menggambar
+                                    // dokumen penuh walau WebView tak terpasang di layar
+                                    // (draw() manual ke PdfDocument menghasilkan halaman
+                                    // kosong untuk WebView lepas-layar).
                                     val dir = File(cacheDir, "shared").apply { mkdirs() }
                                     val out = File(dir, fileName)
-                                    java.io.FileOutputStream(out).use { doc.writeTo(it) }
-                                    doc.close()
-                                    val uri = FileProvider.getUriForFile(this@MainActivity, "id.zerone.mbg.fileprovider", out)
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/pdf"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    startActivity(Intent.createChooser(intent, "Kirim nota PDF"))
-                                    webView.evaluateJavascript("window.__pdfShareOk&&window.__pdfShareOk()", null)
+                                    val heightMils = (view.measuredHeight * 8330 / w + 80).coerceAtMost(30000)
+                                    val attrs = android.print.PrintAttributes.Builder()
+                                        .setMediaSize(android.print.PrintAttributes.MediaSize("NOTA", "Nota", 8330, heightMils))
+                                        .setMinMargins(android.print.PrintAttributes.Margins.NO_MARGINS)
+                                        .build()
+                                    val adapter = view.createPrintDocumentAdapter("nota-" + fileName)
+                                    adapter.onStart()
+                                    adapter.onLayout(null, attrs, null, object : android.print.PrintDocumentAdapter.LayoutResultCallback() {
+                                        override fun onLayoutFinished(info: android.print.PrintDocumentInfo?, changed: Boolean) {
+                                            val fd = android.os.ParcelFileDescriptor.open(out, android.os.ParcelFileDescriptor.MODE_WRITE_ONLY or android.os.ParcelFileDescriptor.MODE_CREATE or android.os.ParcelFileDescriptor.MODE_TRUNCATE)
+                                            adapter.onWrite(arrayOf(android.print.PageRange.ALL_PAGES), fd, null, object : android.print.PrintDocumentAdapter.WriteResultCallback() {
+                                                override fun onWriteFinished(pages: Array<out android.print.PageRange>?) {
+                                                    try { fd.close() } catch (e: Exception) {}
+                                                    try {
+                                                        val uri = FileProvider.getUriForFile(this@MainActivity, "id.zerone.mbg.fileprovider", out)
+                                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                                            type = "application/pdf"
+                                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                        }
+                                                        startActivity(Intent.createChooser(intent, "Kirim nota PDF"))
+                                                        webView.evaluateJavascript("window.__pdfShareOk&&window.__pdfShareOk()", null)
+                                                    } catch (e: Exception) {
+                                                        val em = (e.message ?: "kirim").replace(Regex("[^A-Za-z0-9 _-]"), "").take(40)
+                                                        webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('kirim: " + em + "')", null)
+                                                    }
+                                                }
+                                                override fun onWriteFailed(error: CharSequence?) {
+                                                    try { fd.close() } catch (e: Exception) {}
+                                                    webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('tulis')", null)
+                                                }
+                                            })
+                                        }
+                                        override fun onLayoutFailed(error: CharSequence?) {
+                                            webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('layout')", null)
+                                        }
+                                    }, null)
                                 } catch (e: Exception) {
                                     val em = (e.message ?: "render").replace(Regex("[^A-Za-z0-9 _-]"), "").take(40)
                                     webView.evaluateJavascript("window.__pdfShareFailed&&window.__pdfShareFailed('render: " + em + "')", null)
                                 }
-                            }, 500)
+                            }, 400)
                         }
                     }
                     pdfView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null)
