@@ -146,7 +146,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             lockIfNeeded()
         }
     }
-    }
 
     inner class AndroidBridge {
         @JavascriptInterface
