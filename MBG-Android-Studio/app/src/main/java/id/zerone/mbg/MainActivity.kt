@@ -247,7 +247,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         p.textSize = size
                         p.color = color
                         p.textAlign = align
-                        p.typeface = if (bold) android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD) else android.graphics.Typeface.DEFAULT
+                        p.typeface = android.graphics.Typeface.create(android.graphics.Typeface.SERIF, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
                         return p
                     }
                     fun wrap(text: String, p: android.graphics.Paint, maxW: Float, maxLines: Int): List<String> {
@@ -380,12 +380,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val stempel = bmp("logo-stempel.png", 42f)
                     if (ttd != null) c.drawBitmap(ttd, fc - ttd.width / 2f, footTop + 8f, null)
                     if (stempel != null) {
-                        val sx = fc + (if (ttd != null) ttd.width / 2f else 20f) - 8f
+                        val sx = fc - 96f
                         val scx = sx + stempel.width / 2f
-                        val scy = footTop + 18f + stempel.height / 2f
-                        c.save(); c.rotate(-8f, scx, scy); c.drawBitmap(stempel, sx, footTop + 18f, null); c.restore()
+                        val scy = footTop + 16f + stempel.height / 2f
+                        c.save(); c.rotate(-8f, scx, scy); c.drawBitmap(stempel, sx, footTop + 16f, null); c.restore()
                     }
-                    txt(biz.optString("name"), fc, footTop + 78f, tp(10f, true, dark, android.graphics.Paint.Align.CENTER))
+                    txt("Lisna Sari", fc, footTop + 78f, tp(10f, true, dark, android.graphics.Paint.Align.CENTER))
                     doc.finishPage(page)
                     val dir = File(cacheDir, "shared").apply { mkdirs() }
                     val out = File(dir, fileName)
